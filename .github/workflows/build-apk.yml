@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: گرفتن کدها
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: آماده‌سازی جاوا ۱۷
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -24,11 +24,43 @@ jobs:
       - name: آماده‌سازی اندروید SDK
         uses: android-actions/setup-android@v3
 
-      - name: اجازهٔ اجرا به gradlew
-        run: chmod +x ./gradlew
+      # Gradle مستقیماً نصب می‌شود تا به فایل gradle-wrapper.jar نیازی نباشد
+      - name: آماده‌سازی Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: بررسی فایل‌های پروژه
+        run: |
+          echo "--- ریشهٔ پروژه ---"
+          ls -la
+          echo "--- فایل‌های کد ---"
+          find app/src -type f | sort
+          for f in settings.gradle.kts build.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml; do
+            [ -f "$f" ] || { echo "::error::فایل ضروری پیدا نشد: $f"; exit 1; }
+          done
+          echo "همهٔ فایل‌های ضروری موجودند."
 
       - name: ساخت APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        id: build
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+
+      - name: خلاصهٔ خطاها
+        if: failure()
+        run: |
+          echo "=============== خطاهای کامپایل ==============="
+          grep -E "^(e: |error: |FAILURE|\* What went wrong|Caused by)" -A2 build.log | head -120 || true
+          echo "=============== انتهای گزارش ==============="
+          tail -60 build.log || true
+
+      - name: بارگذاری گزارش کامل ساخت
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
 
       - name: نام‌گذاری فایل خروجی
         run: |
