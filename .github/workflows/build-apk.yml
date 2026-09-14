@@ -1,0 +1,53 @@
+name: ساخت فایل نصبی اپ
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: گرفتن کدها
+        uses: actions/checkout@v4
+
+      - name: آماده‌سازی جاوا ۱۷
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: آماده‌سازی اندروید SDK
+        uses: android-actions/setup-android@v3
+
+      - name: اجازهٔ اجرا به gradlew
+        run: chmod +x ./gradlew
+
+      - name: ساخت APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: نام‌گذاری فایل خروجی
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/payamban.apk
+          ls -lh out
+
+      - name: بارگذاری فایل نصبی
+        uses: actions/upload-artifact@v4
+        with:
+          name: payamban-apk
+          path: out/payamban.apk
+
+      - name: انتشار نسخه برای دانلود مستقیم
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ github.run_number }}"
+          gh release create "$TAG" out/payamban.apk \
+            --title "پیام‌بان $TAG" \
+            --notes "فایل نصبی اندروید. روی گوشی دانلود و نصب کنید." \
+            || gh release upload "$TAG" out/payamban.apk --clobber
