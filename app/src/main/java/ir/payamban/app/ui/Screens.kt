@@ -2,6 +2,10 @@
 
 package ir.payamban.app.ui
 
+import android.app.role.RoleManager
+import android.content.Context
+import android.os.Build
+import android.provider.Telephony
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -96,13 +100,27 @@ fun AppRoot(
     onRequestDefaultApp: () -> Unit
 ) {
     val state = vm.state
+    val context = LocalContext.current
 
-    if (!state.hasPermission || !state.isDefaultSmsApp) {
+    // بعضی گوشی‌ها نقشِ «اپ پیامک» را می‌دهند ولی getDefaultSmsPackage را دیر
+    // به‌روز می‌کنند. پس علاوه بر آن، RoleManager هم پرسیده می‌شود و کاربر
+    // دکمهٔ «بررسی دوباره» و راه ورود دستی دارد تا هیچ‌وقت پشت این صفحه گیر نکند.
+    var recheck by remember { mutableStateOf(0) }
+    var enterAnyway by remember { mutableStateOf(false) }
+    val isDefault = remember(recheck, state.isDefaultSmsApp) {
+        state.isDefaultSmsApp || isDefaultSmsHandler(context)
+    }
+
+    if (!state.hasPermission || (!isDefault && !enterAnyway)) {
         SetupScreen(
             hasPermission = state.hasPermission,
-            isDefault = state.isDefaultSmsApp,
+            isDefault = isDefault,
+            detectedPackage = defaultSmsPackage(context),
+            ownPackage = context.packageName,
             onRequestPermissions = onRequestPermissions,
-            onRequestDefaultApp = onRequestDefaultApp
+            onRequestDefaultApp = onRequestDefaultApp,
+            onRecheck = { recheck++; vm.refresh() },
+            onEnterAnyway = { enterAnyway = true; vm.refresh() }
         )
         return
     }
@@ -175,8 +193,12 @@ fun AppRoot(
 private fun SetupScreen(
     hasPermission: Boolean,
     isDefault: Boolean,
+    detectedPackage: String?,
+    ownPackage: String,
     onRequestPermissions: () -> Unit,
-    onRequestDefaultApp: () -> Unit
+    onRequestDefaultApp: () -> Unit,
+    onRecheck: () -> Unit,
+    onEnterAnyway: () -> Unit
 ) {
     Surface(Modifier.fillMaxSize()) {
         Column(
@@ -215,6 +237,39 @@ private fun SetupScreen(
                 actionLabel = "انتخاب کن",
                 onAction = onRequestDefaultApp
             )
+
+            if (!isDefault) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("اگر انتخاب کردید ولی این صفحه رد نشد", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "اپ پیامکی که گوشی گزارش می‌کند:\n" +
+                                (detectedPackage ?: "— گوشی چیزی گزارش نکرد —"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "نام این برنامه: $ownPackage",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "اگر این دو یکی هستند ولی صفحه رد نمی‌شود، «بررسی دوباره» را بزنید.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(onClick = onRecheck, modifier = Modifier.fillMaxWidth()) {
+                            Text("بررسی دوباره")
+                        }
+                        TextButton(onClick = onEnterAnyway, modifier = Modifier.fillMaxWidth()) {
+                            Text("بدون این مرحله وارد شو")
+                        }
+                    }
+                }
+            }
 
             Spacer(Modifier.height(8.dp))
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
@@ -744,3 +799,25 @@ private fun Modifier.chipRow(): Modifier =
     this
         .horizontalScroll(rememberScrollState())
         .padding(horizontal = 12.dp, vertical = 8.dp)
+
+
+/* ---------------------------------------------------------------- تشخیص اپ پیش‌فرض */
+
+/** نام اپی که گوشی به‌عنوان اپ پیامک می‌شناسد (برای نمایش در صفحهٔ راه‌اندازی) */
+private fun defaultSmsPackage(context: Context): String? =
+    runCatching { Telephony.Sms.getDefaultSmsPackage(context) }.getOrNull()
+
+/**
+ * دو منبع جداگانه پرسیده می‌شود، چون روی بعضی گوشی‌ها یکی از آن‌ها
+ * بلافاصله بعد از تأیید کاربر به‌روز نمی‌شود.
+ */
+private fun isDefaultSmsHandler(context: Context): Boolean {
+    if (defaultSmsPackage(context) == context.packageName) return true
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val held = runCatching {
+            context.getSystemService(RoleManager::class.java)?.isRoleHeld(RoleManager.ROLE_SMS)
+        }.getOrNull()
+        if (held == true) return true
+    }
+    return false
+}
