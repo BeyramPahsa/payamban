@@ -188,7 +188,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         refresh()
     }
 
-    fun setSensitivity(s: Sensitivity) {
+    fun applySensitivity(s: Sensitivity) {
         store.sensitivity = s
         sensitivity = s
         refresh()
