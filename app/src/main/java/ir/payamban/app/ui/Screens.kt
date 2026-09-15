@@ -539,7 +539,7 @@ private fun SettingsTab(vm: AppViewModel) {
                     Sensitivity.entries.forEach { s ->
                         FilterChip(
                             selected = vm.sensitivity == s,
-                            onClick = { vm.setSensitivity(s) },
+                            onClick = { vm.applySensitivity(s) },
                             label = { Text(s.fa) }
                         )
                     }
