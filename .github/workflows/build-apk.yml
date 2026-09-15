@@ -15,6 +15,35 @@ jobs:
       - name: گرفتن کدها
         uses: actions/checkout@v5
 
+      # اگر پوشهٔ app آپلود نشده باشد، از فایل app-source.b64 بازسازی می‌شود
+      - name: بازسازی کدها در صورت نیاز
+        run: |
+          if [ -f app/build.gradle.kts ]; then
+            echo "پوشهٔ app موجود است."
+          elif [ -f app-source.b64 ]; then
+            echo "پوشهٔ app نیست — از app-source.b64 بازسازی می‌شود."
+            base64 -d app-source.b64 > app-source.tgz
+            GOT=$(sha256sum app-source.tgz | cut -d' ' -f1)
+            WANT="d36aeb327066a645e9a9fc9ebb702f8dcf2a31917cfc41dd24cfcef2f872e425"
+            if [ "$GOT" != "$WANT" ]; then
+              echo "::error::فایل app-source.b64 ناقص یا خراب است. احتمالاً هنگام کپی، بخشی از متن جا افتاده. دوباره کل فایل را کپی کنید."
+              exit 1
+            fi
+            tar -xzf app-source.tgz
+            rm -f app-source.tgz
+            echo "بازسازی انجام شد."
+          else
+            echo "::error::نه پوشهٔ app هست و نه فایل app-source.b64. یکی از این دو باید در مخزن باشد."
+            exit 1
+          fi
+
+      - name: بررسی فایل‌های پروژه
+        run: |
+          for f in settings.gradle.kts build.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml; do
+            [ -f "$f" ] || { echo "::error::فایل ضروری پیدا نشد: $f"; exit 1; }
+          done
+          echo "تعداد فایل‌های کد: $(find app/src -type f | wc -l)"
+
       - name: آماده‌سازی جاوا ۱۷
         uses: actions/setup-java@v5
         with:
@@ -24,25 +53,12 @@ jobs:
       - name: آماده‌سازی اندروید SDK
         uses: android-actions/setup-android@v3
 
-      # Gradle مستقیماً نصب می‌شود تا به فایل gradle-wrapper.jar نیازی نباشد
       - name: آماده‌سازی Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
-      - name: بررسی فایل‌های پروژه
-        run: |
-          echo "--- ریشهٔ پروژه ---"
-          ls -la
-          echo "--- فایل‌های کد ---"
-          find app/src -type f | sort
-          for f in settings.gradle.kts build.gradle.kts app/build.gradle.kts app/src/main/AndroidManifest.xml; do
-            [ -f "$f" ] || { echo "::error::فایل ضروری پیدا نشد: $f"; exit 1; }
-          done
-          echo "همهٔ فایل‌های ضروری موجودند."
-
       - name: ساخت APK
-        id: build
         run: |
           set -o pipefail
           gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
