@@ -50,9 +50,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: آماده‌سازی اندروید SDK
-        uses: android-actions/setup-android@v3
-
       - name: آماده‌سازی Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
